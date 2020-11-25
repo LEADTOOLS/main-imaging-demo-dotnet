@@ -1,5 +1,5 @@
 ﻿// *************************************************************
-// Copyright (c) 1991-2019 LEAD Technologies, Inc.              
+// Copyright (c) 1991-2020 LEAD Technologies, Inc.              
 // All Rights Reserved.                                         
 // *************************************************************
 using System;
@@ -18,7 +18,6 @@ namespace Leadtools.Demos
 
       public static bool SetLicense(bool silent)
       {
-         RasterSupport.StartupBuffers(0xFF);
          try
          {
             // TODO: Change this to use your license file and developer key */

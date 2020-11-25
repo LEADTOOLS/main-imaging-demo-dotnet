@@ -1,5 +1,5 @@
 ﻿// *************************************************************
-// Copyright (c) 1991-2019 LEAD Technologies, Inc.              
+// Copyright (c) 1991-2020 LEAD Technologies, Inc.              
 // All Rights Reserved.                                         
 // *************************************************************
 using System;
@@ -105,6 +105,9 @@ namespace MainDemo
             {
                var info = codecs.GetCodecInformation(flt);
                info.CheckedByInformation = enable;
+#if LEADTOOLS_V21_OR_LATER
+               info.IsIgnored = !enable;
+#endif //#if LEADTOOLS_V20_OR_LATER
                codecs.SetCodecInformation(info);
             }
             catch{ }
@@ -116,6 +119,9 @@ namespace MainDemo
          _codecs.Options.Txt.Load.Enabled = enable;
          var info = codecs.GetCodecInformation("TXT");
          info.CheckedByInformation = enable;
+#if LEADTOOLS_V21_OR_LATER
+         info.IsIgnored = !enable;
+#endif //#if LEADTOOLS_V20_OR_LATER
          codecs.SetCodecInformation(info);
       }
 
@@ -356,15 +362,7 @@ namespace MainDemo
       {
          try
          {
-            List<ImageInformation> imagesInfo = LoadImage(true);
-            if (imagesInfo != null)
-            {
-               foreach (ImageInformation info in imagesInfo)
-               {
-                  if (info != null)
-                     NewImage(info);
-               }
-            }
+            OpenFile(true);
          }
          catch (Exception ex)
          {
@@ -1748,6 +1746,40 @@ namespace MainDemo
          }
       }
 
+#if LEADTOOLS_V20_OR_LATER
+      public void ShowPdfAttachmentsDialog(string fileName, RasterCodecs codecs)
+      {
+         PdfAttachmentsForm pdfAttachmentsFrm = new PdfAttachmentsForm();
+         pdfAttachmentsFrm.InitDialog(fileName, codecs);
+         pdfAttachmentsFrm._parent = this;
+         pdfAttachmentsFrm.ShowDialog(this);
+      }
+#endif // #if LEADTOOLS_V20_OR_LATER
+
+      public void LoadFile(string fileName, int firstPage, int lastPage, string attachmentFileName)
+      {
+         using (WaitCursor wait = new WaitCursor())
+         {
+            RasterImage image = _codecs.Load(fileName, 0, CodecsLoadByteOrder.BgrOrGray, firstPage, lastPage);
+            if (_codecs.LoadStatus != RasterExceptionCode.Success)
+            {
+               String message = String.Format("The image was only partially loaded due to error: {0}", _codecs.LoadStatus.ToString());
+               Messager.Show(null, message, MessageBoxIcon.Information, MessageBoxButtons.OK);
+            }
+
+            if (image != null)
+            {
+               CodecsImageInfo info = _codecs.GetInformation(fileName, true);
+
+               image.CustomData.Add("IsBigTiff", info.Tiff.IsBigTiff);
+               NewImage(new ImageInformation(image, String.IsNullOrEmpty(attachmentFileName) ? fileName : attachmentFileName));
+            }
+
+            _openInitialPath = Path.GetDirectoryName(fileName);
+            _menuItemPreferencesLoadMultithreaded.Checked = _codecs.Options.Jpeg.Load.Multithreaded;
+         }
+      }
+
       private List<ImageInformation> LoadImage(bool multiSelect)
       {
          ImageFileLoader loader = new ImageFileLoader();
@@ -1777,7 +1809,63 @@ namespace MainDemo
          return null;
       }
 
-      private void NewImage(ImageInformation info)
+      private void OpenFile(bool multiSelect)
+      {
+         ImageFileLoader loader = new ImageFileLoader();
+
+         try
+         {
+            loader.OpenDialogInitialPath = _openInitialPath;
+            loader.ShowLoadPagesDialog = true;
+            loader.MultiSelect = multiSelect;
+            loader.UseGdiPlus = (_paintProperties.PaintEngine == RasterPaintEngine.GdiPlus);
+            loader.LoadCorrupted = _menuItemLoadingCorruptedImages.Checked;
+            loader.PreferVector = _menuItemPreferVector.Checked;
+            int filesCount = loader.Load(this, _codecs, true);
+
+            if (filesCount > 0)
+            {
+               foreach (ImageInformation image in loader.Images)
+               {
+#if LEADTOOLS_V20_OR_LATER
+                  CodecsImageInfo info = _codecs.GetInformation(image.Name, true);
+                  if (info.AttachmentCount > 0)
+                  {
+                     if (info.IsPortfolio)
+                     {
+                        PortfolioMsgForm portfolioMsgFrm = new PortfolioMsgForm();
+                        portfolioMsgFrm._fileName = image.Name;
+                        portfolioMsgFrm._codecs = _codecs;
+                        portfolioMsgFrm._parentForm = this;
+                        portfolioMsgFrm.ShowDialog(this);
+                     }
+                     else
+                     {
+                        AttachmentMsgForm attachmentMsgFrm = new AttachmentMsgForm();
+                        attachmentMsgFrm._fileName = image.Name;
+                        attachmentMsgFrm._firstPage = loader.FirstPage;
+                        attachmentMsgFrm._lastPage = loader.LastPage;
+                        attachmentMsgFrm._codecs = _codecs;
+                        attachmentMsgFrm._parentForm = this;
+
+                        attachmentMsgFrm.ShowDialog(this);
+                     }
+                  }
+                  else
+#endif // #if LEADTOOLS_V20_OR_LATER
+                  {
+                     LoadFile(image.Name, loader.FirstPage, loader.LastPage, string.Empty);
+                  }
+               }
+            }
+         }
+         catch (Exception ex)
+         {
+            Messager.ShowFileOpenError(this, loader.FileName, ex);
+         }
+      }
+
+      public void NewImage(ImageInformation info)
       {
          // If we are loading a 32-bit image and the paint engine is GDI
          // Ask if the user wants to switch to GDI+2. GDI engine does not support alpha.
